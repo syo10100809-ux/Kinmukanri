@@ -141,7 +141,7 @@ textarea
     <h1>勤務管理</h1>
     <div class="topline">
     <input type="date" id="recordDate" aria-label="勤務日">
-    <button class="small secondary" id="loadDate">この日を開く</button>
+    <button class="small secondary" id="loadDate">この日で作成</button>
     </div>
   </div>
 </header>
@@ -276,7 +276,18 @@ function makeTimes(step=15){let a=[];for(let m=0;m<1440;m+=step)a.push(`${String
 const times=makeTimes(15);
 function blankPerson(n){return {name:`${n}人目`,workStart:'08:30',workEnd:'17:15',type:'',compensatoryDate:'',dispatch:false,dispatchPlace:'',trip:false,tripStart:'09:00',tripEnd:'17:00',overnight:false,clockIn:null,clockOut:null,remarks:''}}
 function normalize(p,i){const q={...blankPerson(i+1),...p};if(q.type==='日勤'){if(!q.workStart)q.workStart='08:30';if(!q.workEnd)q.workEnd='17:15';}else if(!q.type){q.workStart='';q.workEnd='';}return q}
-function loadDay(date){currentDate=date;people=(records[date]?.people||[]).map(normalize);page=0;dirty=false;$('recordDate').value=date;people.forEach(autoRegisterWorkDate);render();$('status').textContent=records[date]?'保存済みデータを表示':'新しい日付';}
+function loadDay(date){
+ currentDate=date;
+ if(records[date]&&Array.isArray(records[date].people)){
+  people=records[date].people.map(normalize);
+ }else{
+  // 新しい日付は、登録済みの名前を引き継いで勤務カードを用意する
+  people=savedNames.map((name,i)=>({...blankPerson(i+1),name}));
+ }
+ page=0;dirty=false;$('recordDate').value=date;
+ people.forEach(autoRegisterWorkDate);render();
+ $('status').textContent=records[date]?'保存済みデータを表示':'新しい日付（未保存）';
+}
 function saveDay(show=true){records[currentDate]={people:people.map(p=>({...p}))};const ok=writeStore();if(show&&ok)$('status').textContent='保存しました ✓';renderSavedDates();renderNameRoster()}
 function markDirty(){dirty=true;$('status').textContent='未保存の変更あり'}
 function timeSelect(value,field,index,label){let s=document.createElement('select');s.setAttribute('aria-label',label);let empty=document.createElement('option');empty.value='';empty.textContent='--:--';s.appendChild(empty);times.forEach(t=>{let o=document.createElement('option');o.value=t;o.textContent=t;s.appendChild(o)});s.value=value||'';s.addEventListener('change',()=>{people[index][field]=s.value;markDirty()});return s}
