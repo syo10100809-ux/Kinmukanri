@@ -184,6 +184,24 @@ const STORAGE='workResultRecords_v1';
 let records=readStore(), currentDate=localDate(), people=[], page=0, dirty=false;
 const NAME_STORAGE='workResultNames_v1';
 const HOLIDAY_STORAGE='workResultHolidayDates_v1';
+const AUTO_HOLIDAY_STORAGE='workResultAutoHolidayDates_v1';
+let autoHolidayDates=readAutoHolidayDates();
+function readAutoHolidayDates(){try{const x=JSON.parse(localStorage.getItem(AUTO_HOLIDAY_STORAGE)||'{}');return x&&typeof x==='object'?x:{}}catch(e){return {}}}
+function writeAutoHolidayDates(){try{localStorage.setItem(AUTO_HOLIDAY_STORAGE,JSON.stringify(autoHolidayDates));return true}catch(e){return false}}
+function markAutoHolidayDate(name,key,dateStr){autoHolidayDates[name]=autoHolidayDates[name]||{compensatory:[],holiday:[]};autoHolidayDates[name][key]=Array.isArray(autoHolidayDates[name][key])?autoHolidayDates[name][key]:[];if(!autoHolidayDates[name][key].includes(dateStr)){autoHolidayDates[name][key].push(dateStr);writeAutoHolidayDates()}}
+function cancelAutoHolidayDate(name,key,dateStr){
+ const tracked=autoHolidayDates[name]?.[key];
+ if(!Array.isArray(tracked)||!tracked.includes(dateStr))return;
+ autoHolidayDates[name][key]=tracked.filter(d=>d!==dateStr);
+ writeAutoHolidayDates();
+ const stillUsedByOtherWork=Object.entries(records).some(([date,rec])=>date!==currentDate&&rec&&Array.isArray(rec.people)&&rec.people.some(p=>p&&p.name===name&&p.type==='日勤'&&date===dateStr));
+ if(!stillUsedByOtherWork){
+  const arr=datesFor(name,key);
+  holidayDates[name]=holidayDates[name]||{compensatory:[],holiday:[]};
+  holidayDates[name][key]=arr.filter(d=>d!==dateStr);
+  writeHolidayDates();
+ }
+}
 let savedNames=readNames();
 let holidayDates=readHolidayDates();
 let editingHolidayName='';
@@ -265,8 +283,18 @@ function autoRegisterWorkDate(person){
  if(!person||person.type!=='日勤'||!person.name)return;
  const [y,m,d]=currentDate.split('-').map(Number);
  const dow=new Date(y,m-1,d).getDay();
- if(dow===0||dow===6)addRegisteredHolidayDate(person.name,'compensatory',currentDate);
- if(jpHolidayName(currentDate))addRegisteredHolidayDate(person.name,'holiday',currentDate);
+ if(dow===0||dow===6){
+  if(!datesFor(person.name,'compensatory').includes(currentDate)){
+   addRegisteredHolidayDate(person.name,'compensatory',currentDate);
+   markAutoHolidayDate(person.name,'compensatory',currentDate);
+  }
+ }
+ if(jpHolidayName(currentDate)){
+  if(!datesFor(person.name,'holiday').includes(currentDate)){
+   addRegisteredHolidayDate(person.name,'holiday',currentDate);
+   markAutoHolidayDate(person.name,'holiday',currentDate);
+  }
+ }
 }
 
 function writeNames(){try{localStorage.setItem(NAME_STORAGE,JSON.stringify(savedNames));renderNameRoster();return true}catch(e){alert('名前を保存できませんでした。端末の空き容量を確認してください。');return false}}
@@ -333,7 +361,21 @@ function createPersonCard(p,i){
  const fields=document.createElement('div');fields.className='fields';
  const typeRow=document.createElement('div');typeRow.className='type-row';
  const type=document.createElement('select');const blankType=document.createElement('option');blankType.value='';blankType.textContent='選択してください';type.append(blankType);TYPES.forEach(t=>{let o=document.createElement('option');o.value=t;o.textContent=t;type.append(o)});type.value=p.type||'';
- type.addEventListener('change',()=>{people[i].type=type.value;if(type.value==='日勤'){people[i].workStart='08:30';people[i].workEnd='17:15';autoRegisterWorkDate(people[i]);}else{people[i].workStart='';people[i].workEnd='';}markDirty();render()});
+ type.addEventListener('change',()=>{
+  const previousType=people[i].type;
+  const personName=people[i].name;
+  if(previousType==='日勤'&&type.value!=='日勤'&&personName){
+   const [y,m,d]=currentDate.split('-').map(Number);
+   const dow=new Date(y,m-1,d).getDay();
+   if(dow===0||dow===6)cancelAutoHolidayDate(personName,'compensatory',currentDate);
+   if(jpHolidayName(currentDate))cancelAutoHolidayDate(personName,'holiday',currentDate);
+   people[i].compensatoryDate='';
+  }
+  people[i].type=type.value;
+  if(type.value==='日勤'){people[i].workStart='08:30';people[i].workEnd='17:15';autoRegisterWorkDate(people[i]);}
+  else{people[i].workStart='';people[i].workEnd='';}
+  markDirty();render()
+ });
  typeRow.append(field('勤務種別',type,false));
  const holidayKey=p.type==='祝代休'?'holiday':'compensatory';
  const holidayLabel=p.type==='祝代休'?'祝代休発生日':'代休発生日';
@@ -477,7 +519,11 @@ $('registerName').addEventListener('click',()=>{
  input.value='';$('status').textContent='名前を登録しました ✓';render();
 });
 $('newName').addEventListener('keydown',e=>{if(e.key==='Enter')$('registerName').click()});
-loadDay(currentDate);
+// 起動時は「新規作成」ボタンを押した直後と同じ、空の入力画面から始める。保存済みデータは変更しない。
+currentDate=localDate();
+people=[];
+page=0;dirty=false;$('recordDate').value=currentDate;render();
+$('status').textContent='新規入力画面（未保存）';
 renderNameRoster();
 })();
 </script>
