@@ -164,7 +164,7 @@ textarea
     <span class="status" id="status">端末内に自動保存</span>
   </div>
   <details class="monthly-overtime" aria-label="月間超過勤務集計"><summary><h2 id="monthlyOvertimeTitle">月間超過勤務時間</h2></summary><div id="monthlyOvertime" class="monthly-overtime-grid"></div><div class="monthly-overtime-note">保存済みの勤務記録を集計。入力中の日は現在の内容を反映します。</div></details>
-  <details class="monthly-overtime" aria-label="月間祝日勤務集計"><summary><h2 id="monthlyHolidayTitle">月間祝日勤務時間</h2></summary><div id="monthlyHolidayWork" class="monthly-overtime-grid"></div><div class="monthly-overtime-note">祝代休日に勤務した時間から休憩を除いて集計します。</div></details>
+  <details class="monthly-overtime" aria-label="月間祝日勤務集計"><summary><h2 id="monthlyHolidayTitle">月間祝日勤務時間</h2></summary><div id="monthlyHolidayWork" class="monthly-overtime-grid"></div><div class="monthly-overtime-note">祝休・祝代休日に勤務した時間から休憩を除いて集計します。</div></details>
   <div id="people"></div>
   <div class="pager">
     <button class="secondary" id="prevPage">‹ 前へ</button>
@@ -347,8 +347,10 @@ function updateOvertimeDisplay(index){
  const card=Array.from(document.querySelectorAll('#people .person')).find(el=>el.querySelector('.overtime-value')?.dataset.personIndex===String(index));
  const el=card?.querySelector('.overtime-value');
  if(!el||!people[index])return;
- const mins=overtimeMinutes(people[index]);
- el.textContent=mins===null?'超過勤務 --:--':'超過勤務 '+Math.floor(mins/60)+':'+String(mins%60).padStart(2,'0');
+ const isHolidayWork=['祝休','祝代休'].includes(people[index].type);
+ const mins=isHolidayWork?holidayWorkMinutes(people[index]):overtimeMinutes(people[index]);
+ const label=isHolidayWork?'祝日勤務':'超過勤務';
+ el.textContent=mins===null?label+' --:--':label+' '+Math.floor(mins/60)+':'+String(mins%60).padStart(2,'0');
  el.style.display='block';el.style.visibility='visible';el.style.minHeight='14px';
 }
 function blankPerson(n){return {name:`${n}人目`,workStart:'08:30',workEnd:'17:15',type:'',compensatoryDate:'',dispatch:false,dispatchPlace:'',trip:false,tripStart:'09:00',tripEnd:'17:00',overnight:false,clockIn:null,clockOut:null,remarks:''}}
@@ -518,11 +520,10 @@ function createPersonCard(p,i){
  if(!Array.isArray(p.breaks))p.breaks=[];
  breakButton.addEventListener('click',()=>{breakPanel.hidden=!breakPanel.hidden;if(!breakPanel.hidden){ensureDefaultLunchBreak();renderBreaks()}breakButton.textContent=breakPanel.hidden?'休憩+':'休憩−'});
  workField.append(breakPanel);
- const initialOvertime=overtimeMinutes(p);
- overtime.textContent=initialOvertime===null?'超過勤務 --:--':'超過勤務 '+Math.floor(initialOvertime/60)+':'+String(initialOvertime%60).padStart(2,'0');
- if(['週休','代休'].includes(p.type)){
-  const weeklyNote=document.createElement('div');weeklyNote.textContent='週休・代休日勤務：入力した時間から休憩を除いて全時間を集計';weeklyNote.style.cssText='font-size:10px;color:#637384;text-align:right;margin-top:2px';workField.append(weeklyNote);
- }
+ const isHolidayWork=['祝休','祝代休'].includes(p.type);
+ const initialOvertime=isHolidayWork?holidayWorkMinutes(p):overtimeMinutes(p);
+ const overtimeLabel=isHolidayWork?'祝日勤務':'超過勤務';
+ overtime.textContent=initialOvertime===null?overtimeLabel+' --:--':overtimeLabel+' '+Math.floor(initialOvertime/60)+':'+String(initialOvertime%60).padStart(2,'0');
  fields.append(workField);
  const dispatchRow=document.createElement('div');dispatchRow.className='paired-row';
  dispatchRow.append(field('派遣',checkbox('有り','dispatch',p,i),false));
@@ -591,7 +592,7 @@ function renderMonthlyOvertime(){
  names.forEach(name=>{const row=document.createElement('div');row.className='monthly-overtime-item';const n=document.createElement('span');n.className='monthly-overtime-name';n.textContent=name;const t=document.createElement('span');t.className='monthly-overtime-time';const mins=totals.get(name)||0;if(mins>=6000)t.classList.add('over-100');else if(mins>=2700)t.classList.add('over-45');t.textContent=`${Math.floor(mins/60)}時間${String(mins%60).padStart(2,'0')}分`;row.append(n,t);root.append(row)});
 }
 function holidayWorkMinutes(person){
- if(!person||person.type!=='祝代休')return 0;
+ if(!person||!['祝休','祝代休'].includes(person.type))return 0;
  const start=timeMinutes(person.workStart),end=timeMinutes(person.workEnd);
  if(start===null||end===null)return 0;
  let finish=end;if(finish<start)finish+=1440;
@@ -605,10 +606,10 @@ function renderMonthlyHolidayWork(){
  const [year,month]=String(currentDate||$('recordDate').value||localDate()).split('-').map(Number);
  $('monthlyHolidayTitle').textContent=`${year}年${month}月の祝日勤務時間`;
  const totals=new Map();
- const addPerson=p=>{if(!p||!p.name||p.type!=='祝代休')return;const mins=holidayWorkMinutes(p);totals.set(p.name,(totals.get(p.name)||0)+mins)};
+ const addPerson=p=>{if(!p||!p.name||!['祝休','祝代休'].includes(p.type))return;const mins=holidayWorkMinutes(p);totals.set(p.name,(totals.get(p.name)||0)+mins)};
  Object.keys(records).sort().forEach(date=>{const parts=date.split('-').map(Number);if(parts[0]!==year||parts[1]!==month||date===currentDate)return;const rec=records[date];if(Array.isArray(rec?.people))rec.people.forEach(addPerson)});
  (people||[]).forEach(addPerson);
- const names=[...savedNames];[...totals.keys(),...(people||[]).filter(p=>p&&p.type==='祝代休').map(p=>p.name)].forEach(n=>{if(n&&!names.includes(n))names.push(n)});
+ const names=[...savedNames];[...totals.keys(),...(people||[]).filter(p=>p&&['祝休','祝代休'].includes(p.type)).map(p=>p.name)].forEach(n=>{if(n&&!names.includes(n))names.push(n)});
  if(!names.length){const e=document.createElement('div');e.className='monthly-overtime-note';e.textContent='職員を登録すると祝日勤務時間が表示されます。';root.append(e);return}
  names.forEach(name=>{const row=document.createElement('div');row.className='monthly-overtime-item';const n=document.createElement('span');n.className='monthly-overtime-name';n.textContent=name;const t=document.createElement('span');t.className='monthly-overtime-time';const mins=totals.get(name)||0;t.textContent=`${Math.floor(mins/60)}時間${String(mins%60).padStart(2,'0')}分`;row.append(n,t);root.append(row)});
 }
@@ -623,10 +624,10 @@ function renderSavedDates(){
  const currentFY=currentParts[1]>=4?currentParts[0]:currentParts[0]-1;
  [...years.keys()].sort((a,b)=>a-b).forEach(fy=>{
   const yearDetails=document.createElement('details');yearDetails.className='saved-group saved-year';yearDetails.open=fy===currentFY;
-  const yearSummary=document.createElement('summary');yearSummary.style.cssText='font-weight:800;padding:10px 4px;cursor:pointer;border-top:1px solid #dce5ec';yearSummary.textContent=`${fy}年度`;yearDetails.append(yearSummary);
+  const yearSummary=document.createElement('summary');yearSummary.style.cssText='font-weight:800;padding:10px 4px;cursor:pointer;border-top:1px solid #dce5ec';yearSummary.textContent=`${fy}年度（${[...years.get(fy).values()].reduce((n,arr)=>n+arr.length,0)}日）`;yearDetails.append(yearSummary);
   [...years.get(fy).keys()].sort((a,b)=>a-b).forEach(month=>{
    const monthDates=years.get(fy).get(month);const monthDetails=document.createElement('details');monthDetails.className='saved-group saved-month';monthDetails.open=fy===currentFY&&month===currentParts[1];
-   const monthSummary=document.createElement('summary');monthSummary.style.cssText='font-weight:700;padding:8px 6px;cursor:pointer;background:#f4f7fa;border-radius:6px;margin:4px 0';monthSummary.textContent=`${month}月（${monthDates.length}日）`;monthDetails.append(monthSummary);
+   const monthSummary=document.createElement('summary');monthSummary.style.cssText='font-weight:700;padding:8px 6px;cursor:pointer;background:#f4f7fa;border-radius:6px;margin:4px 0';monthSummary.textContent=`${month}月（${monthDates.length}件）`;monthDetails.append(monthSummary);
    monthDates.forEach(d=>{
     const row=document.createElement('div');row.className='saved-entry';row.style.paddingLeft='8px';
     const label=document.createElement('div');label.className='date-label';label.textContent=d;
