@@ -670,7 +670,7 @@ function renderNameRoster(){
  summary.textContent=savedNames.length ? `${savedNames.length}人登録済み ▾` : '登録済みの名前はありません';
  summary.setAttribute('aria-expanded','false');
  const list=document.createElement('div');list.className='name-list';list.hidden=true;
- list.style.cssText='display:flex;flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px;width:100%;margin-top:7px';
+ list.style.cssText='display:none;flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px;width:100%;margin-top:7px';
  const editor=document.createElement('div');editor.className='holiday-editor';editor.hidden=true;
  function renderEditor(name){
    editor.replaceChildren();
@@ -772,6 +772,7 @@ function renderNameRoster(){
  });
  summary.addEventListener('click',()=>{
    list.hidden=!list.hidden;
+   list.style.display=list.hidden?'none':'flex';
    summary.setAttribute('aria-expanded',String(!list.hidden));
    summary.textContent=savedNames.length ? `${savedNames.length}人登録済み ${list.hidden?'▾':'▴'}` : '登録済みの名前はありません';
  });
