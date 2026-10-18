@@ -26,7 +26,7 @@ button.danger{background:#a63232}
 button.small{padding:7px 9px;font-size:12px}
 .status{color:var(--muted);font-size:12px;margin-left:auto;align-self:center}
 #people{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-.monthly-overtime{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 8px}.monthly-overtime h2{font-size:12px;margin:0 0 5px;color:var(--navy)}.monthly-overtime-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}.monthly-overtime-item{display:flex;justify-content:space-between;align-items:center;gap:4px;background:#f3f7fa;border-radius:6px;padding:5px 6px;min-width:0}.monthly-overtime-name{font-size:11px;overflow-wrap:anywhere;min-width:0}.monthly-overtime-time{font-size:12px;font-weight:800;color:#245b86;white-space:nowrap}.monthly-overtime-time.over-45{color:#16803c}.monthly-overtime-time.over-100{color:#c62828}.monthly-overtime-note{font-size:9px;color:var(--muted);margin-top:4px}
+.monthly-overtime{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 8px}.monthly-overtime summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.monthly-overtime summary::-webkit-details-marker{display:none}.monthly-overtime summary:after{content:"＋";font-size:14px;font-weight:800;color:var(--navy)}.monthly-overtime[open] summary:after{content:"−"}.monthly-overtime summary h2{margin:0}.monthly-overtime h2{font-size:12px;margin:0 0 5px;color:var(--navy)}.monthly-overtime-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}.monthly-overtime-item{display:flex;justify-content:space-between;align-items:center;gap:4px;background:#f3f7fa;border-radius:6px;padding:5px 6px;min-width:0}.monthly-overtime-name{font-size:11px;overflow-wrap:anywhere;min-width:0}.monthly-overtime-time{font-size:12px;font-weight:800;color:#245b86;white-space:nowrap}.monthly-overtime-time.over-45{color:#16803c}.monthly-overtime-time.over-100{color:#c62828}.monthly-overtime-note{font-size:9px;color:var(--muted);margin-top:4px}
 .name-manager{background:white;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
 .name-manager>strong{display:block;margin-bottom:8px}
 .name-manager-row{display:flex;gap:7px}
@@ -163,7 +163,8 @@ textarea
     <input type="file" id="importFile" accept=".json,application/json" hidden>
     <span class="status" id="status">端末内に自動保存</span>
   </div>
-  <section class="monthly-overtime" aria-label="月間超過勤務集計"><h2 id="monthlyOvertimeTitle">月間超過勤務時間</h2><div id="monthlyOvertime" class="monthly-overtime-grid"></div><div class="monthly-overtime-note">保存済みの勤務記録を集計。入力中の日は現在の内容を反映します。</div></section>
+  <details class="monthly-overtime" aria-label="月間超過勤務集計"><summary><h2 id="monthlyOvertimeTitle">月間超過勤務時間</h2></summary><div id="monthlyOvertime" class="monthly-overtime-grid"></div><div class="monthly-overtime-note">保存済みの勤務記録を集計。入力中の日は現在の内容を反映します。</div></details>
+  <details class="monthly-overtime" aria-label="月間祝日勤務集計"><summary><h2 id="monthlyHolidayTitle">月間祝日勤務時間</h2></summary><div id="monthlyHolidayWork" class="monthly-overtime-grid"></div><div class="monthly-overtime-note">祝代休日に勤務した時間から休憩を除いて集計します。</div></details>
   <div id="people"></div>
   <div class="pager">
     <button class="secondary" id="prevPage">‹ 前へ</button>
@@ -223,6 +224,8 @@ function datesFor(name,key){return Array.isArray(holidayDates[name]?.[key])?holi
 function jpHolidayName(dateStr){
  const [y,m,d]=dateStr.split('-').map(Number);
  const dt=new Date(y,m-1,d), dow=dt.getDay();
+ // 年末年始の特別な祝日扱い：12/29〜12/31、1/1〜1/3
+ if((m===12&&d>=29)||(m===1&&d<=3))return '年末年始';
  const nth=(month,n,weekday)=>{let first=new Date(y,month-1,1).getDay();return 1+((weekday-first+7)%7)+(n-1)*7};
  const eqSpring=Math.floor(20.8431+0.242194*(y-1980)-Math.floor((y-1980)/4));
  const eqAutumn=Math.floor(23.2488+0.242194*(y-1980)-Math.floor((y-1980)/4));
@@ -292,16 +295,19 @@ function autoRegisterWorkDate(person){
  if(!person||person.type!=='日勤'||!person.name)return;
  const [y,m,d]=currentDate.split('-').map(Number);
  const dow=new Date(y,m-1,d).getDay();
+ const holidayName=jpHolidayName(currentDate);
+ // 祝日扱いの日は祝代休発生日を優先。土日と重なっても週休の代休発生日には登録しない。
+ if(holidayName){
+  if(!datesFor(person.name,'holiday').includes(currentDate)){
+   addRegisteredHolidayDate(person.name,'holiday',currentDate);
+   markAutoHolidayDate(person.name,'holiday',currentDate);
+  }
+  return;
+ }
  if(dow===0||dow===6){
   if(!datesFor(person.name,'compensatory').includes(currentDate)){
    addRegisteredHolidayDate(person.name,'compensatory',currentDate);
    markAutoHolidayDate(person.name,'compensatory',currentDate);
-  }
- }
- if(jpHolidayName(currentDate)){
-  if(!datesFor(person.name,'holiday').includes(currentDate)){
-   addRegisteredHolidayDate(person.name,'holiday',currentDate);
-   markAutoHolidayDate(person.name,'holiday',currentDate);
   }
  }
 }
@@ -330,6 +336,10 @@ function overtimeMinutes(person){
   let bEnd=be;if(bEnd<bs)bEnd+=1440;
   breakTotal+=Math.max(0,Math.min(finish,bEnd)-Math.max(start,bs));
  }
+ // 祝代休日の勤務時間は超過勤務ではなく、別枠の祝日勤務時間として集計する。
+ if(person.type==='祝代休')return 0;
+ // 週休・代休に勤務時間を任意入力した場合は、休憩を除いた実勤務時間を全て超過勤務として計上。
+ if(['週休','代休'].includes(person.type))return Math.max(0,(finish-start)-breakTotal);
  // 基準勤務は08:30〜17:15（休憩を除いた実勤務7時間45分）。休憩は回数分すべて差し引く。
  return Math.max(0,(finish-start)-breakTotal-465);
 }
@@ -357,7 +367,7 @@ function loadDay(date){
  $('status').textContent=records[date]?'保存済みデータを表示':'新しい日付（未保存）';
 }
 function saveDay(show=true){records[currentDate]={people:people.map(p=>({...p}))};const ok=writeStore();if(show&&ok)$('status').textContent='保存しました ✓';renderSavedDates();renderNameRoster()}
-function markDirty(){dirty=true;$('status').textContent='未保存の変更あり';renderMonthlyOvertime()}
+function markDirty(){dirty=true;$('status').textContent='未保存の変更あり';renderMonthlyOvertime();renderMonthlyHolidayWork()}
 function timeSelect(value,field,index,label){let s=document.createElement('select');s.setAttribute('aria-label',label);let empty=document.createElement('option');empty.value='';empty.textContent='--:--';s.appendChild(empty);overnightTimes.forEach(t=>{let o=document.createElement('option');o.value=t.value;o.textContent=t.label;s.appendChild(o)});s.value=value||'';s.addEventListener('change',()=>{people[index][field]=s.value;markDirty();updateOvertimeDisplay(index)});return s}
 function checkbox(label,key,p,index){
  let wrap=document.createElement('div');wrap.className='checkrow';
@@ -510,6 +520,9 @@ function createPersonCard(p,i){
  workField.append(breakPanel);
  const initialOvertime=overtimeMinutes(p);
  overtime.textContent=initialOvertime===null?'超過勤務 --:--':'超過勤務 '+Math.floor(initialOvertime/60)+':'+String(initialOvertime%60).padStart(2,'0');
+ if(['週休','代休'].includes(p.type)){
+  const weeklyNote=document.createElement('div');weeklyNote.textContent='週休・代休日勤務：入力した時間から休憩を除いて全時間を集計';weeklyNote.style.cssText='font-size:10px;color:#637384;text-align:right;margin-top:2px';workField.append(weeklyNote);
+ }
  fields.append(workField);
  const dispatchRow=document.createElement('div');dispatchRow.className='paired-row';
  dispatchRow.append(field('派遣',checkbox('有り','dispatch',p,i),false));
@@ -565,7 +578,7 @@ function renderMonthlyOvertime(){
  const [year,month]=String(currentDate||$('recordDate').value||localDate()).split('-').map(Number);
  $('monthlyOvertimeTitle').textContent=`${year}年${month}月の超過勤務時間`;
  const totals=new Map();
- const addPerson=(p)=>{if(!p||!p.name)return;const mins=overtimeMinutes(p);if(mins===null)return;totals.set(p.name,(totals.get(p.name)||0)+mins)};
+ const addPerson=(p)=>{if(!p||!p.name||p.type==='祝代休')return;const mins=overtimeMinutes(p);if(mins===null)return;totals.set(p.name,(totals.get(p.name)||0)+mins)};
  Object.keys(records).sort().forEach(date=>{
   const parts=date.split('-').map(Number);if(parts[0]!==year||parts[1]!==month||date===currentDate)return;
   const rec=records[date];if(Array.isArray(rec?.people))rec.people.forEach(addPerson);
@@ -577,7 +590,29 @@ function renderMonthlyOvertime(){
  if(!names.length){const e=document.createElement('div');e.className='monthly-overtime-note';e.textContent='職員を登録すると月間合計が表示されます。';root.append(e);return}
  names.forEach(name=>{const row=document.createElement('div');row.className='monthly-overtime-item';const n=document.createElement('span');n.className='monthly-overtime-name';n.textContent=name;const t=document.createElement('span');t.className='monthly-overtime-time';const mins=totals.get(name)||0;if(mins>=6000)t.classList.add('over-100');else if(mins>=2700)t.classList.add('over-45');t.textContent=`${Math.floor(mins/60)}時間${String(mins%60).padStart(2,'0')}分`;row.append(n,t);root.append(row)});
 }
-function render(){const root=$('people');root.replaceChildren();const pages=Math.max(1,Math.ceil(people.length/4));page=Math.max(0,Math.min(page,pages-1));const slice=people.slice(page*4,page*4+4);if(!slice.length){const e=document.createElement('div');e.className='empty';e.textContent='まだ人が登録されていません。「＋ 人を追加」から始めてください。';root.append(e)}else slice.forEach((p,j)=>root.append(createPersonCard(p,page*4+j)));$('pageLabel').textContent=`${page+1} / ${pages} ページ（全${people.length}人）`;$('prevPage').disabled=page===0;$('nextPage').disabled=page>=pages-1;$('prevPage').style.opacity=page===0?'.45':'1';$('nextPage').style.opacity=page>=pages-1?'.45':'1';renderMonthlyOvertime();renderSavedDates()}
+function holidayWorkMinutes(person){
+ if(!person||person.type!=='祝代休')return 0;
+ const start=timeMinutes(person.workStart),end=timeMinutes(person.workEnd);
+ if(start===null||end===null)return 0;
+ let finish=end;if(finish<start)finish+=1440;
+ if(finish<=start)return 0;
+ const breaks=Array.isArray(person.breaks)?person.breaks:[];let breakTotal=0;
+ for(const br of breaks){const bs=timeMinutes(br.start),be=timeMinutes(br.end);if(bs===null||be===null)continue;let bEnd=be;if(bEnd<bs)bEnd+=1440;breakTotal+=Math.max(0,Math.min(finish,bEnd)-Math.max(start,bs));}
+ return Math.max(0,(finish-start)-breakTotal);
+}
+function renderMonthlyHolidayWork(){
+ const root=$('monthlyHolidayWork');if(!root)return;root.replaceChildren();
+ const [year,month]=String(currentDate||$('recordDate').value||localDate()).split('-').map(Number);
+ $('monthlyHolidayTitle').textContent=`${year}年${month}月の祝日勤務時間`;
+ const totals=new Map();
+ const addPerson=p=>{if(!p||!p.name||p.type!=='祝代休')return;const mins=holidayWorkMinutes(p);totals.set(p.name,(totals.get(p.name)||0)+mins)};
+ Object.keys(records).sort().forEach(date=>{const parts=date.split('-').map(Number);if(parts[0]!==year||parts[1]!==month||date===currentDate)return;const rec=records[date];if(Array.isArray(rec?.people))rec.people.forEach(addPerson)});
+ (people||[]).forEach(addPerson);
+ const names=[...savedNames];[...totals.keys(),...(people||[]).filter(p=>p&&p.type==='祝代休').map(p=>p.name)].forEach(n=>{if(n&&!names.includes(n))names.push(n)});
+ if(!names.length){const e=document.createElement('div');e.className='monthly-overtime-note';e.textContent='職員を登録すると祝日勤務時間が表示されます。';root.append(e);return}
+ names.forEach(name=>{const row=document.createElement('div');row.className='monthly-overtime-item';const n=document.createElement('span');n.className='monthly-overtime-name';n.textContent=name;const t=document.createElement('span');t.className='monthly-overtime-time';const mins=totals.get(name)||0;t.textContent=`${Math.floor(mins/60)}時間${String(mins%60).padStart(2,'0')}分`;row.append(n,t);root.append(row)});
+}
+function render(){const root=$('people');root.replaceChildren();const pages=Math.max(1,Math.ceil(people.length/4));page=Math.max(0,Math.min(page,pages-1));const slice=people.slice(page*4,page*4+4);if(!slice.length){const e=document.createElement('div');e.className='empty';e.textContent='まだ人が登録されていません。「＋ 人を追加」から始めてください。';root.append(e)}else slice.forEach((p,j)=>root.append(createPersonCard(p,page*4+j)));$('pageLabel').textContent=`${page+1} / ${pages} ページ（全${people.length}人）`;$('prevPage').disabled=page===0;$('nextPage').disabled=page>=pages-1;$('prevPage').style.opacity=page===0?'.45':'1';$('nextPage').style.opacity=page>=pages-1?'.45':'1';renderMonthlyOvertime();renderMonthlyHolidayWork();renderSavedDates()}
 function renderSavedDates(){
  const root=$('savedDates');if(!root)return;root.replaceChildren();
  const dates=Object.keys(records).filter(d=>records[d]&&Array.isArray(records[d].people)).sort((a,b)=>a.localeCompare(b));
@@ -588,10 +623,10 @@ function renderSavedDates(){
  const currentFY=currentParts[1]>=4?currentParts[0]:currentParts[0]-1;
  [...years.keys()].sort((a,b)=>a-b).forEach(fy=>{
   const yearDetails=document.createElement('details');yearDetails.className='saved-group saved-year';yearDetails.open=fy===currentFY;
-  const yearSummary=document.createElement('summary');yearSummary.style.cssText='font-weight:800;padding:10px 4px;cursor:pointer;border-top:1px solid #dce5ec';yearSummary.textContent=`${fy}年度（${[...years.get(fy).values()].reduce((n,arr)=>n+arr.length,0)}日）`;yearDetails.append(yearSummary);
+  const yearSummary=document.createElement('summary');yearSummary.style.cssText='font-weight:800;padding:10px 4px;cursor:pointer;border-top:1px solid #dce5ec';yearSummary.textContent=`${fy}年度`;yearDetails.append(yearSummary);
   [...years.get(fy).keys()].sort((a,b)=>a-b).forEach(month=>{
    const monthDates=years.get(fy).get(month);const monthDetails=document.createElement('details');monthDetails.className='saved-group saved-month';monthDetails.open=fy===currentFY&&month===currentParts[1];
-   const monthSummary=document.createElement('summary');monthSummary.style.cssText='font-weight:700;padding:8px 6px;cursor:pointer;background:#f4f7fa;border-radius:6px;margin:4px 0';monthSummary.textContent=`${month}月（${monthDates.length}件）`;monthDetails.append(monthSummary);
+   const monthSummary=document.createElement('summary');monthSummary.style.cssText='font-weight:700;padding:8px 6px;cursor:pointer;background:#f4f7fa;border-radius:6px;margin:4px 0';monthSummary.textContent=`${month}月（${monthDates.length}日）`;monthDetails.append(monthSummary);
    monthDates.forEach(d=>{
     const row=document.createElement('div');row.className='saved-entry';row.style.paddingLeft='8px';
     const label=document.createElement('div');label.className='date-label';label.textContent=d;
