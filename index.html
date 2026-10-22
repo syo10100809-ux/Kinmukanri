@@ -193,6 +193,11 @@ const $=id=>document.getElementById(id);
 const STORAGE='workResultRecords_v1';
 let records=readStore(), currentDate=localDate(), people=[], page=0, dirty=false;
 const NAME_STORAGE='workResultNames_v1';
+const DISPATCH_PLACE_STORAGE='workResultDispatchPlaces_v1';
+let savedDispatchPlaces=readDispatchPlaces();
+function readDispatchPlaces(){try{const x=JSON.parse(localStorage.getItem(DISPATCH_PLACE_STORAGE)||'[]');return Array.isArray(x)?x.filter(v=>typeof v==='string'&&v.trim()):[]}catch(e){return []}}
+function writeDispatchPlaces(){try{localStorage.setItem(DISPATCH_PLACE_STORAGE,JSON.stringify(savedDispatchPlaces));return true}catch(e){return false}}
+function rememberDispatchPlace(value){const v=String(value||'').trim();if(!v)return;if(!savedDispatchPlaces.includes(v)){savedDispatchPlaces.push(v);savedDispatchPlaces.sort((a,b)=>a.localeCompare(b,'ja'));writeDispatchPlaces()}}
 const HOLIDAY_STORAGE='workResultHolidayDates_v1';
 const AUTO_HOLIDAY_STORAGE='workResultAutoHolidayDates_v1';
 let autoHolidayDates=readAutoHolidayDates();
@@ -370,7 +375,7 @@ function loadDay(date){
 }
 function saveDay(show=true){records[currentDate]={people:people.map(p=>({...p}))};const ok=writeStore();if(show&&ok)$('status').textContent='保存しました ✓';renderSavedDates();renderNameRoster()}
 function markDirty(){dirty=true;$('status').textContent='未保存の変更あり';renderMonthlyOvertime();renderMonthlyHolidayWork()}
-function timeSelect(value,field,index,label){let s=document.createElement('select');s.setAttribute('aria-label',label);let empty=document.createElement('option');empty.value='';empty.textContent='--:--';s.appendChild(empty);overnightTimes.forEach(t=>{let o=document.createElement('option');o.value=t.value;o.textContent=t.label;s.appendChild(o)});s.value=value||'';s.addEventListener('change',()=>{people[index][field]=s.value;markDirty();updateOvertimeDisplay(index)});return s}
+function timeSelect(value,field,index,label,onChangeExtra){let s=document.createElement('select');s.setAttribute('aria-label',label);let empty=document.createElement('option');empty.value='';empty.textContent='--:--';s.appendChild(empty);overnightTimes.forEach(t=>{let o=document.createElement('option');o.value=t.value;o.textContent=t.label;s.appendChild(o)});s.value=value||'';s.addEventListener('change',()=>{people[index][field]=s.value;if(onChangeExtra)onChangeExtra(s.value);markDirty();updateOvertimeDisplay(index)});return s}
 function checkbox(label,key,p,index){
  let wrap=document.createElement('div');wrap.className='checkrow';
  [['有',true],['無',false]].forEach(([txt,val])=>{
@@ -479,7 +484,7 @@ function createPersonCard(p,i){
  overnightInput.addEventListener('change',()=>{people[i].overnight=overnightInput.checked;markDirty();overnightInput.style.accentColor=overnightInput.checked?'#d11f2f':''});
  overnightInline.append(document.createTextNode('宿直'),overnightInput);
  workLabelRow.append(workLabel,breakButton,overnightInline);workField.append(workLabelRow);
- let work=document.createElement('div');work.className='timepair';work.append(timeSelect(p.workStart,'workStart',i,'勤務開始'),document.createTextNode('〜'),timeSelect(p.workEnd,'workEnd',i,'勤務終了'));
+ let work=document.createElement('div');work.className='timepair';let workEndSelect;const workStartSelect=timeSelect(p.workStart,'workStart',i,'勤務開始',v=>{if(workEndSelect){workEndSelect.value=v;people[i].workEnd=v;updateOvertimeDisplay(i)}});workEndSelect=timeSelect(p.workEnd,'workEnd',i,'勤務終了');work.append(workStartSelect,document.createTextNode('〜'),workEndSelect);
  workField.append(work);
  const overtime=document.createElement('div');overtime.className='overtime-value';overtime.dataset.personIndex=String(i);overtime.style.cssText='display:block;visibility:visible;width:100%;min-height:14px;margin-top:3px;font-size:11px;line-height:14px;font-weight:750;color:#245b86;white-space:nowrap;text-align:right;grid-column:1/-1';workField.append(overtime);
  const breakPanel=document.createElement('div');breakPanel.className='break-panel';breakPanel.hidden=true;
@@ -506,7 +511,7 @@ function createPersonCard(p,i){
        sel.addEventListener('change',()=>{if(!Array.isArray(people[i].breaks))people[i].breaks=[];people[i].breaks[bi][key]=sel.value;markDirty();updateOvertimeDisplay(i)});
        return sel;
      };
-     row.append(makeBreakSelect(br.start,'start',`休憩${bi+1}開始`),document.createTextNode('〜'),makeBreakSelect(br.end,'end',`休憩${bi+1}終了`));
+     const breakEndSelect=makeBreakSelect(br.end,'end',`休憩${bi+1}終了`);const breakStartSelect=makeBreakSelect(br.start,'start',`休憩${bi+1}開始`);breakStartSelect.addEventListener('change',()=>{breakEndSelect.value=breakStartSelect.value;people[i].breaks[bi].end=breakStartSelect.value;markDirty();updateOvertimeDisplay(i)});row.append(breakStartSelect,document.createTextNode('〜'),breakEndSelect);
      const remove=document.createElement('button');remove.type='button';remove.className='small danger';remove.textContent='×';remove.setAttribute('aria-label',`休憩${bi+1}を削除`);
      remove.style.cssText='padding:3px 7px;font-size:11px;min-height:27px';
      remove.addEventListener('click',()=>{people[i].breaks.splice(bi,1);markDirty();renderBreaks();updateOvertimeDisplay(i)});
@@ -527,7 +532,7 @@ function createPersonCard(p,i){
  fields.append(workField);
  const dispatchRow=document.createElement('div');dispatchRow.className='paired-row';
  dispatchRow.append(field('派遣',checkbox('有り','dispatch',p,i),false));
- const dispatchPlace=document.createElement('input');dispatchPlace.type='text';dispatchPlace.placeholder='派遣場所（任意）';dispatchPlace.value=p.dispatchPlace||'';dispatchPlace.addEventListener('change',()=>{people[i].dispatchPlace=dispatchPlace.value;markDirty()});
+ const dispatchPlace=document.createElement('input');dispatchPlace.type='text';dispatchPlace.setAttribute('list','dispatchPlaceOptions');dispatchPlace.placeholder='派遣場所（選択・入力）';dispatchPlace.value=p.dispatchPlace||'';let dispatchOptions=document.getElementById('dispatchPlaceOptions');if(!dispatchOptions){dispatchOptions=document.createElement('datalist');dispatchOptions.id='dispatchPlaceOptions';document.body.append(dispatchOptions)}dispatchOptions.replaceChildren();savedDispatchPlaces.forEach(place=>{const opt=document.createElement('option');opt.value=place;dispatchOptions.append(opt)});const saveDispatchPlace=()=>{people[i].dispatchPlace=dispatchPlace.value;rememberDispatchPlace(dispatchPlace.value);markDirty()};dispatchPlace.addEventListener('change',saveDispatchPlace);dispatchPlace.addEventListener('blur',saveDispatchPlace);
  const dispatchField=field('派遣場所',dispatchPlace,false);dispatchField.classList.add('conditional-detail');dispatchField.hidden=!p.dispatch;dispatchRow.append(dispatchField);fields.append(dispatchRow);
  const tripRow=document.createElement('div');tripRow.className='paired-row';
  tripRow.append(field('出張',checkbox('有り','trip',p,i),false));
@@ -660,9 +665,9 @@ $('loadDate').addEventListener('click',()=>{if(dirty&&!confirm('この日の変�
 $('recordDate').addEventListener('change',()=>{});
 $('prevPage').addEventListener('click',()=>{if(page>0){page--;render()}});
 $('nextPage').addEventListener('click',()=>{if((page+1)*4<people.length){page++;render()}});
-$('exportData').addEventListener('click',()=>{const exportRecords={...records};if(dirty)exportRecords[currentDate]={people:people.map(p=>({...p}))};const blob=new Blob([JSON.stringify({app:'勤務結果記録',version:1,records:exportRecords},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`勤務結果バックアップ_${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+$('exportData').addEventListener('click',()=>{const exportRecords={...records};if(dirty)exportRecords[currentDate]={people:people.map(p=>({...p}))};const blob=new Blob([JSON.stringify({app:'勤務結果記録',version:1,records:exportRecords,dispatchPlaces:savedDispatchPlaces},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`勤務結果バックアップ_${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 $('importBtn').addEventListener('click',()=>$('importFile').click());
-$('importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const data=JSON.parse(await f.text());const incoming=data.records||data;if(!incoming||typeof incoming!=='object')throw Error('形式');if(!confirm('バックアップを読み込みます。既存の日付と同じデータは上書きされます。続けますか？'))return;Object.keys(incoming).forEach(d=>{if(Array.isArray(incoming[d]?.people))records[d]={people:incoming[d].people.map(normalize)}});writeStore();loadDay(currentDate);alert('復元しました。')}catch(err){alert('バックアップを読み込めませんでした。JSONファイルを確認してください。')}finally{e.target.value=''}});
+$('importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const data=JSON.parse(await f.text());const incoming=data.records||data;if(!incoming||typeof incoming!=='object')throw Error('形式');if(Array.isArray(data.dispatchPlaces)){savedDispatchPlaces=[...new Set([...savedDispatchPlaces,...data.dispatchPlaces.filter(v=>typeof v==='string'&&v.trim())])].sort((a,b)=>a.localeCompare(b,'ja'));writeDispatchPlaces()}if(!confirm('バックアップを読み込みます。既存の日付と同じデータは上書きされます。続けますか？'))return;Object.keys(incoming).forEach(d=>{if(Array.isArray(incoming[d]?.people))records[d]={people:incoming[d].people.map(normalize)}});writeStore();loadDay(currentDate);alert('復元しました。')}catch(err){alert('バックアップを読み込めませんでした。JSONファイルを確認してください。')}finally{e.target.value=''}});
 function renderNameRoster(){
  const root=$('nameRoster');if(!root)return;root.replaceChildren();
  const summary=document.createElement('button');
