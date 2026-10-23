@@ -519,7 +519,14 @@ function createPersonCard(p,i){
    });
    const add=document.createElement('button');add.type='button';add.className='small secondary';add.textContent='＋ 休憩を追加';
    add.style.cssText='margin-top:4px;padding:4px 7px;font-size:10px';
-   add.addEventListener('click',()=>{if(!Array.isArray(people[i].breaks))people[i].breaks=[];people[i].breaks.push({start:'',end:''});markDirty();renderBreaks();updateOvertimeDisplay(i)});
+   add.addEventListener('click',()=>{
+      if(!Array.isArray(people[i].breaks))people[i].breaks=[];
+      // 追加する休憩は、ひとつ前の休憩終了時刻から始める。
+      const previous=people[i].breaks[people[i].breaks.length-1];
+      const nextStart=previous&&previous.end?previous.end:'';
+      people[i].breaks.push({start:nextStart,end:nextStart});
+      markDirty();renderBreaks();updateOvertimeDisplay(i)
+    });
    breakPanel.append(add);
  };
  if(!Array.isArray(p.breaks))p.breaks=[];
@@ -636,8 +643,9 @@ function renderSavedDates(){
    monthDates.forEach(d=>{
     const row=document.createElement('div');row.className='saved-entry';row.style.paddingLeft='8px';
     const label=document.createElement('div');label.className='date-label';label.textContent=d;
+    const openSavedDate=()=>{loadDay(d);window.scrollTo({top:0,behavior:'smooth'});};
     const small=document.createElement('small');small.textContent=`${records[d].people.length}人`;
-    const open=document.createElement('button');open.className='small';open.textContent='開く';open.addEventListener('click',()=>loadDay(d));
+    const open=document.createElement('button');open.className='small';open.textContent='開く';open.addEventListener('click',openSavedDate);
     const del=document.createElement('button');del.className='small danger';del.textContent='削除';del.addEventListener('click',()=>{if(confirm(`${d}の保存データを削除しますか？`)){delete records[d];writeStore();if(currentDate===d){people=[];page=0;render()}renderSavedDates()}});
     row.append(label,small,open,del);monthDetails.append(row);
    });
