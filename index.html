@@ -229,6 +229,11 @@ const $=id=>document.getElementById(id);
 const STORAGE='workResultRecords_v1';
 let records=readStore(), currentDate=localDate(), people=[], page=0, dirty=false;
 const NAME_STORAGE='workResultNames_v1';
+// 名前照合用：前後の空白を除き、半角・全角スペースの違いを統一する。
+function normalizePersonName(value){
+ return String(value||'').normalize('NFKC').replace(/[\\s\\u3000]+/g,'').trim();
+}
+
 const DISPATCH_PLACE_STORAGE='workResultDispatchPlaces_v1';
 let savedDispatchPlaces=readDispatchPlaces();
 function readDispatchPlaces(){try{const x=JSON.parse(localStorage.getItem(DISPATCH_PLACE_STORAGE)||'[]');return Array.isArray(x)?x.filter(v=>typeof v==='string'&&v.trim()):[]}catch(e){return []}}
@@ -719,18 +724,50 @@ $('importFile').addEventListener('change',async e=>{
  try{
   const data=JSON.parse(await f.text());const incoming=data.records||data;
   if(!incoming||typeof incoming!=='object'||Array.isArray(incoming))throw Error('形式');
-  if(!confirm('バックアップを読み込みます。既存の日付と同じデータは上書きされます。名前一覧なども取り込みます。続けますか？'))return;
-  Object.keys(incoming).forEach(d=>{if(Array.isArray(incoming[d]?.people))records[d]={people:incoming[d].people.map(normalize)}});
-  if(Array.isArray(data.names))savedNames=[...new Set([...savedNames,...data.names.filter(n=>typeof n==='string'&&n.trim())])];
-  Object.values(incoming).forEach(rec=>(rec?.people||[]).forEach(p=>{const n=typeof p?.name==='string'?p.name.trim():'';if(n&&!/^\\d+人目$/.test(n)&&!savedNames.includes(n))savedNames.push(n)}));
+  const preview=[];
+  Object.keys(incoming).sort().forEach(date=>{
+   const peopleIn=incoming[date]?.people;
+   if(!Array.isArray(peopleIn))return;
+   peopleIn.forEach(p=>{if(p&&typeof p.name==='string'&&p.name.trim())preview.push({date,name:p.name.trim()})});
+  });
+  if(!preview.length)throw Error('勤務記録がありません');
+  const duplicates=[];
+  preview.forEach(item=>{
+   const existing=records[item.date]?.people||[];
+   if(existing.some(p=>p&&p.name===item.name))duplicates.push(item);
+  });
+  let message=`個人データを取り込みます。\n対象：${preview.length}件の勤務記録`;
+  if(duplicates.length)message+=`\n\n同じ職員・同じ日付の記録が${duplicates.length}件あります。該当する職員の記録だけを置き換えます。他の職員の記録は残ります。`;
+  message+='\n\n続けますか？';
+  if(!confirm(message))return;
+
+  // Merge by date and person name. Never replace the whole day's roster.
+  Object.keys(incoming).forEach(date=>{
+   const incomingPeople=incoming[date]?.people;
+   if(!Array.isArray(incomingPeople))return;
+   const existingPeople=Array.isArray(records[date]?.people)?records[date].people.map(p=>({...p})):[];
+   incomingPeople.forEach((raw,i)=>{
+    if(!raw||typeof raw!=='object')return;
+    const person=normalize(raw,i);
+    const name=String(person.name||'').trim();
+    if(!name)return;
+    const existingIndex=existingPeople.findIndex(p=>p&&normalizePersonName(p.name)===normalizePersonName(name));
+    if(existingIndex>=0)existingPeople[existingIndex]=person;
+    else existingPeople.push(person);
+   });
+   records[date]={people:existingPeople};
+  });
+
+  if(Array.isArray(data.names))savedNames=[...savedNames]; data.names.filter(n=>typeof n==='string'&&n.trim()).forEach(n=>{if(!savedNames.some(existing=>normalizePersonName(existing)===normalizePersonName(n)))savedNames.push(n)});
+  preview.forEach(item=>{if(!savedNames.includes(item.name))savedNames.push(item.name)});
   savedNames.sort((a,b)=>a.localeCompare(b,'ja'));
-  try{localStorage.setItem(NAME_STORAGE,JSON.stringify(savedNames))}catch(e){}
+  try{localStorage.setItem(NAME_STORAGE,JSON.stringify(savedNames))}catch(err){}
   if(Array.isArray(data.dispatchPlaces)){savedDispatchPlaces=[...new Set([...savedDispatchPlaces,...data.dispatchPlaces.filter(v=>typeof v==='string'&&v.trim())])].sort((a,b)=>a.localeCompare(b,'ja'));writeDispatchPlaces()}
   if(data.holidayDates&&typeof data.holidayDates==='object')Object.entries(data.holidayDates).forEach(([name,groups])=>{if(!groups||typeof groups!=='object')return;holidayDates[name]=holidayDates[name]||{compensatory:[],holiday:[]};['compensatory','holiday'].forEach(key=>{if(Array.isArray(groups[key]))holidayDates[name][key]=[...new Set([...(holidayDates[name][key]||[]),...groups[key].filter(v=>typeof v==='string')])].sort()})});
   if(data.autoHolidayDates&&typeof data.autoHolidayDates==='object')Object.entries(data.autoHolidayDates).forEach(([name,groups])=>{if(!groups||typeof groups!=='object')return;autoHolidayDates[name]=autoHolidayDates[name]||{compensatory:[],holiday:[]};['compensatory','holiday'].forEach(key=>{if(Array.isArray(groups[key]))autoHolidayDates[name][key]=[...new Set([...(autoHolidayDates[name][key]||[]),...groups[key].filter(v=>typeof v==='string')])].sort()})});
   writeHolidayDates();writeAutoHolidayDates();writeStore();loadDay(currentDate);renderNameRoster();
-  alert('復元しました。勤務記録から名前を復旧し、登録一覧にも反映しました。');
- }catch(err){alert('バックアップを読み込めませんでした。JSONファイルを確認してください。')}finally{e.target.value=''}
+  alert(`取り込み完了。${preview.length}件の勤務記録を統合しました。`);
+ }catch(err){alert('取り込めませんでした。バックアップ形式と勤務記録を確認してください。')}finally{e.target.value=''}
 });
 
 function renderPersonCalendar(name, container){
