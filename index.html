@@ -105,6 +105,17 @@ input[type=checkbox]{width:19px;height:19px;accent-color:var(--blue)}
  .name-manager{padding:5px;margin-bottom:4px} .name-manager-row input{min-width:0}
  .name-manager .note{display:none}
 }
+
+/* 管理者用カレンダー勤務詳細を個人用と同じ行形式に統一 */
+.work-view-panel{background:#fff;color:#17212b;border-radius:14px;width:min(100%,560px);max-height:90dvh;overflow:auto;padding:16px;box-shadow:0 10px 35px #0005}
+.work-view-head{display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #d7e0e8;padding-bottom:10px;margin-bottom:10px}
+.work-view-head strong{font-size:17px}.work-view-head button{font-size:13px}
+.work-view-person{border:1px solid #d7e0e8;border-radius:10px;padding:12px;margin:9px 0;background:#f8fafc}
+.work-view-person h3{margin:0 0 9px;font-size:16px;color:#17324d}
+.work-view-row{display:grid;grid-template-columns:100px 1fr;gap:6px;padding:6px 0;border-bottom:1px solid #e5eaf0;font-size:13px;overflow-wrap:anywhere}
+.work-view-row span:first-child{color:#526679;font-weight:700}
+@media(max-width:430px){.work-view-panel{padding:14px}.work-view-row{grid-template-columns:100px minmax(0,1fr);font-size:13px}}
+
 </style>
 <style>
 
@@ -170,6 +181,18 @@ textarea
 .calendar-day{min-height:57px;border:1px solid #e0e7ed;border-radius:6px;padding:3px 2px;background:#fbfcfd;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
 .calendar-day.blank{background:transparent;border-color:transparent}
 .calendar-day.today{border-color:#2463a6;background:#eef6ff}
+.calendar-day.has-record{cursor:pointer;background:#f2f8ff;border-color:#9abce0}
+.calendar-day.has-record:active{background:#dcecff}
+.calendar-day.has-record::after{content:"";font-size:8px;color:#2463a6;margin-top:auto}
+.record-view-overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.record-view-panel{background:#fff;color:#17212b;border-radius:16px;width:min(100%,480px);max-height:85vh;overflow:auto;padding:18px;box-sizing:border-box;box-shadow:0 12px 40px #0005}
+.record-view-panel h3{margin:0 0 6px;font-size:20px}
+.record-view-sub{color:#526679;font-size:13px;margin-bottom:14px}
+.record-view-person{border:1px solid #dbe4ec;border-radius:10px;padding:12px;margin:10px 0}
+.record-view-person h4{margin:0 0 8px;font-size:16px}
+.record-view-line{font-size:14px;line-height:1.55;margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.record-view-close{display:block;width:100%;margin-top:14px;padding:12px;border:0;border-radius:9px;background:#245c91;color:white;font-size:16px;font-weight:700}
+
 .calendar-day .day-num{font-size:10px;color:#526679;align-self:flex-start;line-height:1.1}
 .calendar-mark{font-size:12px;font-weight:850;line-height:1.2;overflow-wrap:anywhere;text-align:center;color:#17324d}
 .calendar-mark.comp-click{border:0;background:#e8f0f8;color:#17324d;border-radius:5px;padding:2px 3px;font-size:11px;cursor:pointer}
@@ -725,72 +748,13 @@ $('exportData').addEventListener('click',()=>{
  recoverNamesFromRecords();
  const exportRecords={...records};
  if(dirty)exportRecords[currentDate]={people:people.map(p=>({...p}))};
-
- // 保存名と記録中の名前をまとめる
  const allNames=[...savedNames];
  Object.values(exportRecords).forEach(rec=>(rec?.people||[]).forEach(p=>{
   const n=typeof p?.name==='string'?p.name.trim():'';
-  if(n&&!/^\\d+人目$/.test(n)&&!allNames.some(x=>normalizePersonName(x)===normalizePersonName(n)))allNames.push(n);
+  if(n&&!/^\\d+人目$/.test(n)&&!allNames.includes(n))allNames.push(n);
  }));
- allNames.sort((a,b)=>a.localeCompare(b,'ja'));
-
- // スマホで名前をタップして選ぶバックアップ選択画面
- const oldModal=document.getElementById('backupPickerOverlay');
- if(oldModal)oldModal.remove();
- const overlay=document.createElement('div');
- overlay.id='backupPickerOverlay';
- overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.58);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
- const panel=document.createElement('div');
- panel.style.cssText='background:#fff;color:#172033;width:100%;max-width:460px;max-height:82vh;overflow:auto;border-radius:20px;padding:20px;box-sizing:border-box;box-shadow:0 12px 40px #0005;';
- const heading=document.createElement('h2');heading.textContent='バックアップする範囲';heading.style.cssText='font-size:21px;margin:0 0 8px;';panel.appendChild(heading);
- const intro=document.createElement('p');intro.textContent='保存したい範囲をタップしてください。';intro.style.cssText='font-size:14px;color:#586174;margin:0 0 16px;';panel.appendChild(intro);
- const makeChoice=(label,sub,fn,primary=false)=>{const b=document.createElement('button');b.type='button';b.style.cssText='display:block;width:100%;text-align:left;padding:14px 15px;margin:8px 0;border-radius:12px;border:1px solid '+(primary?'#1769aa':'#d5dce5')+';background:'+(primary?'#eaf4ff':'#fff')+';color:#172033;font-size:16px;font-weight:700;';const t=document.createElement('div');t.textContent=label;b.appendChild(t);if(sub){const small=document.createElement('div');small.textContent=sub;small.style.cssText='font-size:12px;font-weight:400;color:#586174;margin-top:4px;';b.appendChild(small)}b.addEventListener('click',()=>{overlay.remove();fn()});panel.appendChild(b)};
- makeChoice('全体をバックアップ','登録されている全員の勤務記録',()=>exportBackup(null),true);
- if(allNames.length){const label=document.createElement('div');label.textContent='個人を選んでバックアップ';label.style.cssText='font-weight:700;margin:18px 0 6px;';panel.appendChild(label);allNames.forEach(name=>makeChoice(name,'この人の勤務記録だけ',()=>exportBackup(name)));}
- const cancel=document.createElement('button');cancel.type='button';cancel.textContent='キャンセル';cancel.style.cssText='display:block;width:100%;padding:12px;margin-top:14px;border:0;border-radius:12px;background:#eef1f5;color:#293548;font-size:16px;font-weight:700;';cancel.addEventListener('click',()=>overlay.remove());panel.appendChild(cancel);
- overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});overlay.appendChild(panel);document.body.appendChild(overlay);
- function exportBackup(selectedName){
- const outputRecords={};
- Object.entries(exportRecords).forEach(([date,rec])=>{
-  const dayPeople=Array.isArray(rec?.people)?rec.people:[];
-  const filtered=selectedName
-   ?dayPeople.filter(p=>normalizePersonName(String(p?.name||''))===normalizePersonName(selectedName))
-   :dayPeople;
-  if(filtered.length)outputRecords[date]={...rec,people:filtered.map(p=>({...p}))};
- });
-
- if(!Object.keys(outputRecords).length){
-  alert(selectedName?`${selectedName}さんの保存済み勤務記録がありません。`:'バックアップする勤務記録がありません。');
-  return;
- }
-
- const outputNames=selectedName?[selectedName]:allNames;
- const filterPersonDates=(source)=>{
-  if(!selectedName)return source;
-  const group=source?.[selectedName];
-  return group?{[selectedName]:group}:{};
- };
- const backup={
-  app:'勤務結果記録',
-  version:2,
-  backupScope:selectedName?'person':'all',
-  selectedPerson:selectedName,
-  records:outputRecords,
-  names:outputNames,
-  dispatchPlaces:[...savedDispatchPlaces],
-  holidayDates:filterPersonDates(holidayDates),
-  autoHolidayDates:filterPersonDates(autoHolidayDates)
- };
- const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
- const url=URL.createObjectURL(blob);
- const a=document.createElement('a');
- a.href=url;
- a.download=selectedName
-  ?`勤務結果バックアップ_${selectedName}_${localDate()}.json`
-  :`勤務結果バックアップ_全体_${localDate()}.json`;
- a.click();
- setTimeout(()=>URL.revokeObjectURL(url),1000);
- }
+ const blob=new Blob([JSON.stringify({app:'勤務結果記録',version:2,records:exportRecords,names:allNames,dispatchPlaces:savedDispatchPlaces,holidayDates:holidayDates,autoHolidayDates:autoHolidayDates},null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`勤務結果バックアップ_${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
 });
 
 $('resetAllData').addEventListener('click',()=>{
@@ -874,6 +838,46 @@ function renderPersonCalendar(name, container){
    const source=(ds===currentDate&&dirty)?people:(rec&&Array.isArray(rec.people)?rec.people:[]);
    return source.filter(p=>p&&p.name===name);
  }
+ function showDateRecords(ds, entries){
+   const overlay=document.createElement('div');overlay.className='record-view-overlay';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');
+   const panel=document.createElement('div');panel.className='record-view-panel work-view-panel';
+   const head=document.createElement('div');head.className='work-view-head';
+   const heading=document.createElement('strong');heading.textContent=`${ds} の勤務記録`;
+   const close=document.createElement('button');close.type='button';close.className='secondary';close.textContent='閉じる';
+   const dismiss=()=>overlay.remove();close.addEventListener('click',dismiss);overlay.addEventListener('click',e=>{if(e.target===overlay)dismiss()});
+   head.append(heading,close);panel.append(head);
+   const addRow=(parent,label,value)=>{const row=document.createElement('div');row.className='work-view-row';const a=document.createElement('span');a.textContent=label;const b=document.createElement('span');b.textContent=String(value??'');row.append(a,b);parent.append(row)};
+   if(!entries.length){const empty=document.createElement('p');empty.textContent='この日の勤務記録はありません。';panel.append(empty)}
+   entries.forEach(person=>{
+     const card=document.createElement('section');card.className='work-view-person';
+     const title=document.createElement('h3');title.textContent=person.name||name;card.append(title);
+     addRow(card,'勤務種別',person.type||'未設定');
+     addRow(card,'勤務時間',person.workStart&&person.workEnd?person.workStart+' ～ '+person.workEnd:'入力なし');
+     const breaks=Array.isArray(person.breaks)?person.breaks:[];
+     addRow(card,'休憩時間',breaks.length?breaks.map(b=>(b.start||'--:--')+' ～ '+(b.end||'--:--')).join('、'):(person.type==='日勤'?'12:00 ～ 13:00（標準）':'入力なし'));
+     {
+       const isHolidayWork=['祝休','祝代休'].includes(person.type);
+       const mins=isHolidayWork?holidayWorkMinutes(person):overtimeMinutes(person);
+       const label=isHolidayWork?'祝日勤務時間':'超過勤務時間';
+       const value=mins===null?'--:--':`${Math.floor(mins/60)}時間${String(mins%60).padStart(2,'0')}分`;
+       addRow(card,label,value);
+       const row=card.lastElementChild;
+       row.style.color='#c62828';
+       row.style.fontWeight='800';
+       row.style.background='#fff4f4';
+       row.style.borderRadius='6px';
+       row.style.padding='8px';
+     }
+     if(person.type==='代休'||person.type==='祝代休')addRow(card,person.type+'発生日',person.compensatoryDate||'未設定');
+     addRow(card,'派遣',person.dispatch?'有（'+(person.dispatchPlace||person.dispatchLocation||'場所未入力')+'）':'無');
+     addRow(card,'出張',person.trip?'有（'+(person.tripStart||'--:--')+' ～ '+(person.tripEnd||'--:--')+'）':'無');
+     addRow(card,'宿直',person.overnight?'有':'無');
+     addRow(card,'出勤時打刻',person.clockIn===null||person.clockIn===undefined?'未設定':person.clockIn?'有':'無');
+     addRow(card,'退勤時打刻',person.clockOut===null||person.clockOut===undefined?'未設定':person.clockOut?'有':'無');
+     addRow(card,'備考',person.note||person.remarks||'なし');panel.append(card);
+   });
+   overlay.append(panel);document.body.append(overlay);close.focus();
+ }
  function renderMonth(){
    monthLabel.textContent=`${shownYear}年${shownMonth+1}月`;
    grid.replaceChildren();
@@ -887,6 +891,13 @@ function renderPersonCalendar(name, container){
      if(ds===localDate())cell.classList.add('today');
      const num=document.createElement('span');num.className='day-num';num.textContent=d;cell.append(num);
      const entries=recordsForDate(ds);
+     if(entries.length){
+       cell.classList.add('has-record');
+       cell.setAttribute('role','button');cell.setAttribute('tabindex','0');
+       cell.setAttribute('aria-label',`${ds}の勤務記録を閲覧`);
+       cell.addEventListener('click',()=>showDateRecords(ds,entries));
+       cell.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();showDateRecords(ds,entries)}});
+     }
      entries.forEach(person=>{
        let label='';
        if(person.type==='日勤')label='∞';
@@ -901,13 +912,11 @@ function renderPersonCalendar(name, container){
        if(!label)return;
        if(person.type==='代休'||person.type==='祝代休'){
          const mark=document.createElement('button');mark.type='button';mark.className='calendar-mark comp-click';mark.textContent=label;
-         mark.title='クリックすると発生日を確認できます';
-         mark.addEventListener('click',()=>{
-           const key=person.type==='祝代休'?'holiday':'compensatory';
-           const registered=datesFor(name,key);
-           const used=person.compensatoryDate||'';
-           const sourceDate=used||'未設定';
-           alert(`${name}さん\n勤務日：${ds}\n勤務種別：${person.type}\n発生日：${sourceDate}\n\n登録済み発生日：${registered.length?registered.join('、'):'なし'}`);
+         mark.title='タップすると勤務記録の詳細を表示します';
+         mark.setAttribute('aria-label',`${ds} ${person.type}の勤務記録を閲覧`);
+         mark.addEventListener('click',(event)=>{
+           event.stopPropagation();
+           showDateRecords(ds, entries);
          });
          cell.append(mark);
        }else{
