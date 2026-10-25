@@ -820,7 +820,7 @@ function renderNameRoster(){
    back.addEventListener('click',()=>{if(location.hash==='#name-detail')history.back();else closeNameDetail();});
    const pageTitle=document.createElement('strong');pageTitle.textContent=`${name}の個別管理`;
    pageHead.append(back,pageTitle);editor.append(pageHead);
-   const title=document.createElement('h3');title.textContent='代休発生日登録';editor.append(title);
+   const title=document.createElement('h3');title.textContent='';title.hidden=true;editor.append(title);
    renderPersonCalendar(name,editor);
    const makeDateSection=(key,label)=>{
      const heading=document.createElement('div');heading.style.fontWeight='700';heading.style.marginTop='8px';heading.textContent=label;editor.append(heading);
