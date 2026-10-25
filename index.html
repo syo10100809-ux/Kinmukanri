@@ -725,13 +725,72 @@ $('exportData').addEventListener('click',()=>{
  recoverNamesFromRecords();
  const exportRecords={...records};
  if(dirty)exportRecords[currentDate]={people:people.map(p=>({...p}))};
+
+ // 保存名と記録中の名前をまとめる
  const allNames=[...savedNames];
  Object.values(exportRecords).forEach(rec=>(rec?.people||[]).forEach(p=>{
   const n=typeof p?.name==='string'?p.name.trim():'';
-  if(n&&!/^\\d+人目$/.test(n)&&!allNames.includes(n))allNames.push(n);
+  if(n&&!/^\\d+人目$/.test(n)&&!allNames.some(x=>normalizePersonName(x)===normalizePersonName(n)))allNames.push(n);
  }));
- const blob=new Blob([JSON.stringify({app:'勤務結果記録',version:2,records:exportRecords,names:allNames,dispatchPlaces:savedDispatchPlaces,holidayDates:holidayDates,autoHolidayDates:autoHolidayDates},null,2)],{type:'application/json'});
- const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`勤務結果バックアップ_${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+ allNames.sort((a,b)=>a.localeCompare(b,'ja'));
+
+ // スマホで名前をタップして選ぶバックアップ選択画面
+ const oldModal=document.getElementById('backupPickerOverlay');
+ if(oldModal)oldModal.remove();
+ const overlay=document.createElement('div');
+ overlay.id='backupPickerOverlay';
+ overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.58);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+ const panel=document.createElement('div');
+ panel.style.cssText='background:#fff;color:#172033;width:100%;max-width:460px;max-height:82vh;overflow:auto;border-radius:20px;padding:20px;box-sizing:border-box;box-shadow:0 12px 40px #0005;';
+ const heading=document.createElement('h2');heading.textContent='バックアップする範囲';heading.style.cssText='font-size:21px;margin:0 0 8px;';panel.appendChild(heading);
+ const intro=document.createElement('p');intro.textContent='保存したい範囲をタップしてください。';intro.style.cssText='font-size:14px;color:#586174;margin:0 0 16px;';panel.appendChild(intro);
+ const makeChoice=(label,sub,fn,primary=false)=>{const b=document.createElement('button');b.type='button';b.style.cssText='display:block;width:100%;text-align:left;padding:14px 15px;margin:8px 0;border-radius:12px;border:1px solid '+(primary?'#1769aa':'#d5dce5')+';background:'+(primary?'#eaf4ff':'#fff')+';color:#172033;font-size:16px;font-weight:700;';const t=document.createElement('div');t.textContent=label;b.appendChild(t);if(sub){const small=document.createElement('div');small.textContent=sub;small.style.cssText='font-size:12px;font-weight:400;color:#586174;margin-top:4px;';b.appendChild(small)}b.addEventListener('click',()=>{overlay.remove();fn()});panel.appendChild(b)};
+ makeChoice('全体をバックアップ','登録されている全員の勤務記録',()=>exportBackup(null),true);
+ if(allNames.length){const label=document.createElement('div');label.textContent='個人を選んでバックアップ';label.style.cssText='font-weight:700;margin:18px 0 6px;';panel.appendChild(label);allNames.forEach(name=>makeChoice(name,'この人の勤務記録だけ',()=>exportBackup(name)));}
+ const cancel=document.createElement('button');cancel.type='button';cancel.textContent='キャンセル';cancel.style.cssText='display:block;width:100%;padding:12px;margin-top:14px;border:0;border-radius:12px;background:#eef1f5;color:#293548;font-size:16px;font-weight:700;';cancel.addEventListener('click',()=>overlay.remove());panel.appendChild(cancel);
+ overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});overlay.appendChild(panel);document.body.appendChild(overlay);
+ function exportBackup(selectedName){
+ const outputRecords={};
+ Object.entries(exportRecords).forEach(([date,rec])=>{
+  const dayPeople=Array.isArray(rec?.people)?rec.people:[];
+  const filtered=selectedName
+   ?dayPeople.filter(p=>normalizePersonName(String(p?.name||''))===normalizePersonName(selectedName))
+   :dayPeople;
+  if(filtered.length)outputRecords[date]={...rec,people:filtered.map(p=>({...p}))};
+ });
+
+ if(!Object.keys(outputRecords).length){
+  alert(selectedName?`${selectedName}さんの保存済み勤務記録がありません。`:'バックアップする勤務記録がありません。');
+  return;
+ }
+
+ const outputNames=selectedName?[selectedName]:allNames;
+ const filterPersonDates=(source)=>{
+  if(!selectedName)return source;
+  const group=source?.[selectedName];
+  return group?{[selectedName]:group}:{};
+ };
+ const backup={
+  app:'勤務結果記録',
+  version:2,
+  backupScope:selectedName?'person':'all',
+  selectedPerson:selectedName,
+  records:outputRecords,
+  names:outputNames,
+  dispatchPlaces:[...savedDispatchPlaces],
+  holidayDates:filterPersonDates(holidayDates),
+  autoHolidayDates:filterPersonDates(autoHolidayDates)
+ };
+ const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');
+ a.href=url;
+ a.download=selectedName
+  ?`勤務結果バックアップ_${selectedName}_${localDate()}.json`
+  :`勤務結果バックアップ_全体_${localDate()}.json`;
+ a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }
 });
 
 $('resetAllData').addEventListener('click',()=>{
