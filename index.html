@@ -702,80 +702,35 @@ $('recordDate').addEventListener('change',()=>{const chosen=$('recordDate').valu
 $('prevPage').addEventListener('click',()=>{if(page>0){page--;render()}});
 $('nextPage').addEventListener('click',()=>{if((page+1)*4<people.length){page++;render()}});
 $('exportData').addEventListener('click',()=>{
+ recoverNamesFromRecords();
  const exportRecords={...records};
  if(dirty)exportRecords[currentDate]={people:people.map(p=>({...p}))};
- const blob=new Blob([JSON.stringify({
-  app:'勤務結果記録',version:2,
-  records:exportRecords,
-  names:savedNames,
-  dispatchPlaces:savedDispatchPlaces,
-  holidayDates:holidayDates,
-  autoHolidayDates:autoHolidayDates
- },null,2)],{type:'application/json'});
- const url=URL.createObjectURL(blob);
- const a=document.createElement('a');a.href=url;
- a.download=`勤務結果バックアップ_${localDate()}.json`;
- a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+ const allNames=[...savedNames];
+ Object.values(exportRecords).forEach(rec=>(rec?.people||[]).forEach(p=>{
+  const n=typeof p?.name==='string'?p.name.trim():'';
+  if(n&&!/^\\d+人目$/.test(n)&&!allNames.includes(n))allNames.push(n);
+ }));
+ const blob=new Blob([JSON.stringify({app:'勤務結果記録',version:2,records:exportRecords,names:allNames,dispatchPlaces:savedDispatchPlaces,holidayDates:holidayDates,autoHolidayDates:autoHolidayDates},null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`勤務結果バックアップ_${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
 });
 $('importBtn').addEventListener('click',()=>$('importFile').click());
 $('importFile').addEventListener('change',async e=>{
  const f=e.target.files[0];if(!f)return;
  try{
-  const data=JSON.parse(await f.text());
-  const incoming=data.records||data;
+  const data=JSON.parse(await f.text());const incoming=data.records||data;
   if(!incoming||typeof incoming!=='object'||Array.isArray(incoming))throw Error('形式');
-  if(!confirm('バックアップを読み込みます。既存の日付と同じデータは上書きされます。登録済みの名前や代休情報も取り込みます。続けますか？'))return;
-
-  Object.keys(incoming).forEach(d=>{
-   if(Array.isArray(incoming[d]?.people))records[d]={people:incoming[d].people.map(normalize)};
-  });
-
-  // 名前は既存分を残しつつ、バックアップ内の名前を追加する。
-  if(Array.isArray(data.names)){
-   savedNames=[...new Set([...savedNames,...data.names.filter(n=>typeof n==='string'&&n.trim())])];
-   writeNames();
-  }
-
-  if(Array.isArray(data.dispatchPlaces)){
-   savedDispatchPlaces=[...new Set([...savedDispatchPlaces,...data.dispatchPlaces.filter(v=>typeof v==='string'&&v.trim())])].sort((a,b)=>a.localeCompare(b,'ja'));
-   writeDispatchPlaces();
-  }
-
-  // 代休発生日・自動登録管理情報は、名前ごと／種類ごとに統合する。
-  if(data.holidayDates&&typeof data.holidayDates==='object'){
-   Object.entries(data.holidayDates).forEach(([name,groups])=>{
-    if(!groups||typeof groups!=='object')return;
-    holidayDates[name]=holidayDates[name]||{compensatory:[],holiday:[]};
-    ['compensatory','holiday'].forEach(key=>{
-     if(Array.isArray(groups[key])){
-      holidayDates[name][key]=[...new Set([...(Array.isArray(holidayDates[name][key])?holidayDates[name][key]:[]),...groups[key].filter(v=>typeof v==='string')])].sort();
-     }
-    });
-   });
-   writeHolidayDates();
-  }
-
-  if(data.autoHolidayDates&&typeof data.autoHolidayDates==='object'){
-   Object.entries(data.autoHolidayDates).forEach(([name,groups])=>{
-    if(!groups||typeof groups!=='object')return;
-    autoHolidayDates[name]=autoHolidayDates[name]||{compensatory:[],holiday:[]};
-    ['compensatory','holiday'].forEach(key=>{
-     if(Array.isArray(groups[key])){
-      autoHolidayDates[name][key]=[...new Set([...(Array.isArray(autoHolidayDates[name][key])?autoHolidayDates[name][key]:[]),...groups[key].filter(v=>typeof v==='string')])].sort();
-     }
-    });
-   });
-   writeAutoHolidayDates();
-  }
-
-  writeStore();
-  loadDay(currentDate);
-  alert('復元しました。登録済みの名前と、バックアップに含まれる代休情報も取り込みました。');
- }catch(err){
-  alert('バックアップを読み込めませんでした。JSONファイルを確認してください。');
- }finally{
-  e.target.value='';
- }
+  if(!confirm('バックアップを読み込みます。既存の日付と同じデータは上書きされます。名前一覧なども取り込みます。続けますか？'))return;
+  Object.keys(incoming).forEach(d=>{if(Array.isArray(incoming[d]?.people))records[d]={people:incoming[d].people.map(normalize)}});
+  if(Array.isArray(data.names))savedNames=[...new Set([...savedNames,...data.names.filter(n=>typeof n==='string'&&n.trim())])];
+  Object.values(incoming).forEach(rec=>(rec?.people||[]).forEach(p=>{const n=typeof p?.name==='string'?p.name.trim():'';if(n&&!/^\\d+人目$/.test(n)&&!savedNames.includes(n))savedNames.push(n)}));
+  savedNames.sort((a,b)=>a.localeCompare(b,'ja'));
+  try{localStorage.setItem(NAME_STORAGE,JSON.stringify(savedNames))}catch(e){}
+  if(Array.isArray(data.dispatchPlaces)){savedDispatchPlaces=[...new Set([...savedDispatchPlaces,...data.dispatchPlaces.filter(v=>typeof v==='string'&&v.trim())])].sort((a,b)=>a.localeCompare(b,'ja'));writeDispatchPlaces()}
+  if(data.holidayDates&&typeof data.holidayDates==='object')Object.entries(data.holidayDates).forEach(([name,groups])=>{if(!groups||typeof groups!=='object')return;holidayDates[name]=holidayDates[name]||{compensatory:[],holiday:[]};['compensatory','holiday'].forEach(key=>{if(Array.isArray(groups[key]))holidayDates[name][key]=[...new Set([...(holidayDates[name][key]||[]),...groups[key].filter(v=>typeof v==='string')])].sort()})});
+  if(data.autoHolidayDates&&typeof data.autoHolidayDates==='object')Object.entries(data.autoHolidayDates).forEach(([name,groups])=>{if(!groups||typeof groups!=='object')return;autoHolidayDates[name]=autoHolidayDates[name]||{compensatory:[],holiday:[]};['compensatory','holiday'].forEach(key=>{if(Array.isArray(groups[key]))autoHolidayDates[name][key]=[...new Set([...(autoHolidayDates[name][key]||[]),...groups[key].filter(v=>typeof v==='string')])].sort()})});
+  writeHolidayDates();writeAutoHolidayDates();writeStore();loadDay(currentDate);renderNameRoster();
+  alert('復元しました。勤務記録から名前を復旧し、登録一覧にも反映しました。');
+ }catch(err){alert('バックアップを読み込めませんでした。JSONファイルを確認してください。')}finally{e.target.value=''}
 });
 
 function renderPersonCalendar(name, container){
@@ -873,7 +828,25 @@ function closeNameDetail(){
 window.addEventListener('popstate',()=>{
  if(location.hash!=='#name-detail')closeNameDetail();
 });
+function recoverNamesFromRecords(){
+ const recovered=[];
+ Object.values(records).forEach(rec=>{
+  if(!rec||!Array.isArray(rec.people))return;
+  rec.people.forEach(person=>{
+   const name=typeof person?.name==='string'?person.name.trim():'';
+   if(name&&!/^\\d+人目$/.test(name)&&!recovered.includes(name))recovered.push(name);
+  });
+ });
+ let changed=false;
+ recovered.forEach(name=>{if(!savedNames.includes(name)){savedNames.push(name);changed=true}});
+ if(changed){
+  savedNames.sort((a,b)=>a.localeCompare(b,'ja'));
+  try{localStorage.setItem(NAME_STORAGE,JSON.stringify(savedNames))}catch(e){}
+ }
+ return changed;
+}
 function renderNameRoster(){
+ recoverNamesFromRecords();
  const root=$('nameRoster');if(!root)return;root.replaceChildren();
  const summary=document.createElement('button');
  summary.type='button';summary.className='name-count';
