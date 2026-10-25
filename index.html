@@ -142,7 +142,43 @@ textarea
  line-height:13px !important;
  padding:2px 3px !important;
 }
-</style></head>
+</style>
+<style>
+/* 名前クリック時の詳細ページ */
+.holiday-editor.detail-page{
+ position:fixed!important;inset:0!important;z-index:1000!important;
+ display:block!important;overflow-y:auto!important;
+ margin:0!important;padding:16px!important;border:0!important;border-radius:0!important;
+ background:#f3f6f9!important;box-sizing:border-box!important;
+ padding-top:max(16px,env(safe-area-inset-top))!important;
+ padding-bottom:max(16px,env(safe-area-inset-bottom))!important;
+}
+.detail-page-head{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:10px;background:#17324d;color:white;border-radius:10px}
+.detail-page-head button{flex-shrink:0}
+.detail-page-head strong{font-size:16px}
+</style>
+
+
+<style>
+.person-calendar{margin:12px 0 16px;background:#fff;border:1px solid #d7e0e8;border-radius:12px;padding:10px;box-shadow:0 2px 5px #10203008}
+.person-calendar h3{margin:0 0 8px;font-size:15px;color:#17324d}
+.calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.calendar-toolbar strong{font-size:15px}
+.calendar-toolbar button{padding:6px 10px}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.calendar-weekday{text-align:center;font-size:11px;font-weight:800;color:#526679;padding:4px 0}.calendar-weekday:first-child{color:#d32f2f}.calendar-weekday:nth-child(7){color:#1976d2}
+.calendar-day{min-height:57px;border:1px solid #e0e7ed;border-radius:6px;padding:3px 2px;background:#fbfcfd;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.calendar-day.blank{background:transparent;border-color:transparent}
+.calendar-day.today{border-color:#2463a6;background:#eef6ff}
+.calendar-day .day-num{font-size:10px;color:#526679;align-self:flex-start;line-height:1.1}
+.calendar-mark{font-size:12px;font-weight:850;line-height:1.2;overflow-wrap:anywhere;text-align:center;color:#17324d}
+.calendar-mark.comp-click{border:0;background:#e8f0f8;color:#17324d;border-radius:5px;padding:2px 3px;font-size:11px;cursor:pointer}
+.calendar-legend{font-size:10px;color:#637384;line-height:1.6;margin-top:7px}
+.calendar-month-select{min-width:0;max-width:145px}
+@media(max-width:430px){.person-calendar{padding:6px;margin:7px 0}.calendar-day{min-height:48px;padding:2px 1px}.calendar-mark{font-size:10px}.calendar-mark.comp-click{font-size:9px;padding:2px}.calendar-toolbar strong{font-size:12px}.calendar-toolbar button{padding:5px 7px;font-size:10px}}
+</style>
+
+</head>
 <body>
 <header>
   <div class="header-row">
@@ -188,7 +224,7 @@ textarea
 </main>
 <script>
 (function(){
-const TYPES=['日勤','週休','代休','祝休','祝代休','夏特','夏休','冬休'];
+const TYPES=['日勤','週休','代休','祝休','祝代休','夏特','夏休','冬休','年休'];
 const $=id=>document.getElementById(id);
 const STORAGE='workResultRecords_v1';
 let records=readStore(), currentDate=localDate(), people=[], page=0, dirty=false;
@@ -631,8 +667,8 @@ function renderSavedDates(){
   const yearDetails=document.createElement('details');yearDetails.className='saved-group saved-year';yearDetails.open=fy===currentFY;
   const yearSummary=document.createElement('summary');yearSummary.style.cssText='font-weight:800;padding:10px 4px;cursor:pointer;border-top:1px solid #dce5ec';yearSummary.textContent=`${fy}年度`;yearDetails.append(yearSummary);
   [...years.get(fy).keys()].sort((a,b)=>a-b).forEach(month=>{
-   const monthDates=years.get(fy).get(month);const monthDetails=document.createElement('details');monthDetails.className='saved-group saved-month';monthDetails.open=fy===currentFY&&month===currentParts[1];
-   const monthSummary=document.createElement('summary');monthSummary.style.cssText='font-weight:700;padding:8px 6px;cursor:pointer;background:#f4f7fa;border-radius:6px;margin:4px 0';monthSummary.textContent=`${month}月（${monthDates.length}日）`;monthDetails.append(monthSummary);
+   const monthDates=years.get(fy).get(month);const monthDetails=document.createElement('details');monthDetails.className='saved-group saved-month';monthDetails.open=false;
+   const monthSummary=document.createElement('summary');monthSummary.style.cssText='font-weight:700;padding:8px 6px;cursor:pointer;background:#f4f7fa;border-radius:6px;margin:4px 0';monthSummary.textContent=`${month}月（${monthDates.length}日）${fy===currentFY&&month===currentParts[1]?' ※当月':''}`;monthDetails.append(monthSummary);
    monthDates.forEach(d=>{
     const row=document.createElement('div');row.className='saved-entry';row.style.paddingLeft='8px';
     const label=document.createElement('div');label.className='date-label';label.textContent=d;
@@ -668,6 +704,102 @@ $('nextPage').addEventListener('click',()=>{if((page+1)*4<people.length){page++;
 $('exportData').addEventListener('click',()=>{const exportRecords={...records};if(dirty)exportRecords[currentDate]={people:people.map(p=>({...p}))};const blob=new Blob([JSON.stringify({app:'勤務結果記録',version:1,records:exportRecords,dispatchPlaces:savedDispatchPlaces},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`勤務結果バックアップ_${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 $('importBtn').addEventListener('click',()=>$('importFile').click());
 $('importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const data=JSON.parse(await f.text());const incoming=data.records||data;if(!incoming||typeof incoming!=='object')throw Error('形式');if(Array.isArray(data.dispatchPlaces)){savedDispatchPlaces=[...new Set([...savedDispatchPlaces,...data.dispatchPlaces.filter(v=>typeof v==='string'&&v.trim())])].sort((a,b)=>a.localeCompare(b,'ja'));writeDispatchPlaces()}if(!confirm('バックアップを読み込みます。既存の日付と同じデータは上書きされます。続けますか？'))return;Object.keys(incoming).forEach(d=>{if(Array.isArray(incoming[d]?.people))records[d]={people:incoming[d].people.map(normalize)}});writeStore();loadDay(currentDate);alert('復元しました。')}catch(err){alert('バックアップを読み込めませんでした。JSONファイルを確認してください。')}finally{e.target.value=''}});
+
+function renderPersonCalendar(name, container){
+ const section=document.createElement('section');section.className='person-calendar';
+ const title=document.createElement('h3');title.textContent='月間勤務カレンダー';section.append(title);
+ const toolbar=document.createElement('div');toolbar.className='calendar-toolbar';
+ const prev=document.createElement('button');prev.type='button';prev.className='secondary';prev.textContent='‹ 前月';
+ const monthLabel=document.createElement('strong');
+ const next=document.createElement('button');next.type='button';next.className='secondary';next.textContent='翌月 ›';
+ const now=new Date();let shownYear=now.getFullYear(),shownMonth=now.getMonth();
+ toolbar.append(prev,monthLabel,next);section.append(toolbar);
+ const grid=document.createElement('div');grid.className='calendar-grid';section.append(grid);
+ const legend=document.createElement('div');legend.className='calendar-legend';
+ legend.textContent='∞ 日勤　〇 週休　●※ 代休　◎ 祝休　祝代※ 祝代休　夏特1〜5・夏休1〜7・冬休1〜3・年休';
+ section.append(legend);
+ const dayNames=['日','月','火','水','木','金','土'];
+ function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
+ function recordsForDate(ds){
+   const rec=records[ds];
+   const source=(ds===currentDate&&dirty)?people:(rec&&Array.isArray(rec.people)?rec.people:[]);
+   return source.filter(p=>p&&p.name===name);
+ }
+ function renderMonth(){
+   monthLabel.textContent=`${shownYear}年${shownMonth+1}月`;
+   grid.replaceChildren();
+   dayNames.forEach(day=>{const el=document.createElement('div');el.className='calendar-weekday';el.textContent=day;grid.append(el)});
+   const first=new Date(shownYear,shownMonth,1).getDay();
+   const count=new Date(shownYear,shownMonth+1,0).getDate();
+   for(let i=0;i<first;i++){const blank=document.createElement('div');blank.className='calendar-day blank';grid.append(blank)}
+   for(let d=1;d<=count;d++){
+     const ds=dateKey(shownYear,shownMonth,d);
+     const cell=document.createElement('div');cell.className='calendar-day';
+     if(ds===localDate())cell.classList.add('today');
+     const num=document.createElement('span');num.className='day-num';num.textContent=d;cell.append(num);
+     const entries=recordsForDate(ds);
+     entries.forEach(person=>{
+       let label='';
+       if(person.type==='日勤')label='∞';
+       else if(person.type==='週休')label='〇';
+       else if(person.type==='代休')label='●※';
+       else if(person.type==='祝休')label='◎';
+       else if(person.type==='祝代休')label='祝代※';
+       else if(['夏特','夏休','冬休'].includes(person.type)){
+         const count=specialLeaveCountForCalendar(name,person.type,ds,person);
+         label=person.type+count;
+       }else if(person.type==='年休')label='年休';
+       if(!label)return;
+       if(person.type==='代休'||person.type==='祝代休'){
+         const mark=document.createElement('button');mark.type='button';mark.className='calendar-mark comp-click';mark.textContent=label;
+         mark.title='クリックすると発生日を確認できます';
+         mark.addEventListener('click',()=>{
+           const key=person.type==='祝代休'?'holiday':'compensatory';
+           const registered=datesFor(name,key);
+           const used=person.compensatoryDate||'';
+           const sourceDate=used||'未設定';
+           alert(`${name}さん\n勤務日：${ds}\n勤務種別：${person.type}\n発生日：${sourceDate}\n\n登録済み発生日：${registered.length?registered.join('、'):'なし'}`);
+         });
+         cell.append(mark);
+       }else{
+         const mark=document.createElement('span');mark.className='calendar-mark';mark.textContent=label;cell.append(mark);
+       }
+     });
+     grid.append(cell);
+   }
+ }
+ prev.addEventListener('click',()=>{shownMonth--;if(shownMonth<0){shownMonth=11;shownYear--}renderMonth()});
+ next.addEventListener('click',()=>{shownMonth++;if(shownMonth>11){shownMonth=0;shownYear++}renderMonth()});
+ renderMonth();container.append(section);
+}
+function specialLeaveCountForCalendar(name,type,date,person){
+ const fy=fiscalYearOf(date),entries=[];
+ Object.keys(records).forEach(ds=>{
+   if(fiscalYearOf(ds)!==fy)return;
+   const rec=records[ds];if(!Array.isArray(rec?.people))return;
+   rec.people.forEach((p,pos)=>{if(p&&p.name===name&&p.type===type)entries.push({date:ds,pos,p})});
+ });
+ if(dirty&&currentDate===date){
+   const existing=entries.filter(e=>e.date!==date);
+   people.forEach((p,pos)=>{if(p&&p.name===name&&p.type===type)existing.push({date,pos,p})});
+   entries.splice(0,entries.length,...existing);
+ }
+ entries.sort((a,b)=>a.date.localeCompare(b.date)||a.pos-b.pos);
+ const idx=entries.findIndex(e=>e.date===date&&e.p===person);
+ if(idx>=0)return idx+1;
+ const sameDay=entries.filter(e=>e.date===date);
+ return Math.max(1,sameDay.length);
+}
+
+function closeNameDetail(){
+ editingHolidayName='';
+ const editor=document.querySelector('.holiday-editor.detail-page');
+ if(editor){editor.hidden=true;editor.classList.remove('detail-page');}
+ if(location.hash==='#name-detail')history.replaceState({},'',location.pathname+location.search);
+}
+window.addEventListener('popstate',()=>{
+ if(location.hash!=='#name-detail')closeNameDetail();
+});
 function renderNameRoster(){
  const root=$('nameRoster');if(!root)return;root.replaceChildren();
  const summary=document.createElement('button');
@@ -681,7 +813,15 @@ function renderNameRoster(){
    editor.replaceChildren();
    if(!name){editor.hidden=true;return}
    editor.hidden=false;
-   const title=document.createElement('h3');title.textContent=`${name}さんの代休発生日登録`;editor.append(title);
+   editor.classList.add('detail-page');
+   const pageHead=document.createElement('div');pageHead.className='detail-page-head';
+   const back=document.createElement('button');back.type='button';back.className='secondary';back.textContent='‹ 戻る';
+   back.style.cssText='background:#fff;color:#17324d';
+   back.addEventListener('click',()=>{if(location.hash==='#name-detail')history.back();else closeNameDetail();});
+   const pageTitle=document.createElement('strong');pageTitle.textContent=`${name}の個別管理`;
+   pageHead.append(back,pageTitle);editor.append(pageHead);
+   const title=document.createElement('h3');title.textContent='代休発生日登録';editor.append(title);
+   renderPersonCalendar(name,editor);
    const makeDateSection=(key,label)=>{
      const heading=document.createElement('div');heading.style.fontWeight='700';heading.style.marginTop='8px';heading.textContent=label;editor.append(heading);
      const row=document.createElement('div');row.className='holiday-editor-row';
@@ -755,7 +895,8 @@ function renderNameRoster(){
    });
    editor.append(summaryBox);
 
-   const close=document.createElement('button');close.type='button';close.className='secondary';close.style.marginTop='8px';close.textContent='閉じる';close.addEventListener('click',()=>{editingHolidayName='';editor.hidden=true});
+   const close=document.createElement('button');close.type='button';close.className='secondary';close.style.marginTop='12px';close.textContent='戻る';
+   close.addEventListener('click',()=>{if(location.hash==='#name-detail')history.back();else closeNameDetail()});
    editor.append(close);
  }
  savedNames.forEach((name,i)=>{
@@ -766,7 +907,12 @@ function renderNameRoster(){
    const holidayCount=availableDatesFor(name,'holiday').length;
    label.textContent=`${i+1}. ${name}（代休残${compCount}・祝代休残${holidayCount}）`;label.title='クリックして代休の日付を登録・残数を確認';
    label.style.cssText='display:block;flex:1;min-width:0;overflow-wrap:anywhere;cursor:pointer;text-decoration:underline;text-underline-offset:2px';
-   label.addEventListener('click',()=>{editingHolidayName=name;renderEditor(name)});
+   label.addEventListener('click',()=>{
+     editingHolidayName=name;
+     if(location.hash!=='#name-detail')history.pushState({nameDetail:true},'', '#name-detail');
+     renderEditor(name);
+     window.scrollTo(0,0);
+   });
    const del=document.createElement('button');del.type='button';del.className='name-delete';del.textContent='削除';
    del.addEventListener('click',()=>{
      if(!confirm(`登録名「${name}」を削除しますか？\n勤務記録にすでに入力された名前は、その記録には残ります。`))return;
@@ -780,6 +926,11 @@ function renderNameRoster(){
    list.style.display=list.hidden?'none':'flex';
    summary.setAttribute('aria-expanded',String(!list.hidden));
    summary.textContent=savedNames.length ? `${savedNames.length}人登録済み ${list.hidden?'▾':'▴'}` : '登録済みの名前はありません';
+   if(!list.hidden){
+     requestAnimationFrame(()=>{
+       list.scrollIntoView({behavior:'smooth',block:'start'});
+     });
+   }
  });
  root.append(summary,list,editor);
  if(editingHolidayName&&savedNames.includes(editingHolidayName))renderEditor(editingHolidayName);
